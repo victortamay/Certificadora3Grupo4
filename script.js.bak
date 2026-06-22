@@ -1,7 +1,8 @@
 // Configuração do Supabase
 const SUPABASE_URL = "https://wivoneicusyqxfjfjpiq.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indpdm9uZWljdXN5cXhmamZqcGlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MDUzNDgsImV4cCI6MjA4OTI4MTM0OH0.CIU-jF1gsufCL503YJD2H-wHu6T81QXFh7AwQbD7R8U";
-
+// A biblioteca carregada via CDN define a variável global 'supabase'
+// Para evitar conflito ao reatribuir 'const supabase', usamos um nome diferente para o cliente
 let db;
 try {
     db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -27,13 +28,11 @@ function getEffectiveStatus(activity) {
 }
 
 function formatDate(dateStr) {
-    if (!dateStr) return '';
     const date = new Date(dateStr);
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function formatTime(dateStr) {
-    if (!dateStr) return '';
     const date = new Date(dateStr);
     return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
@@ -89,7 +88,7 @@ function renderNavbar() {
                 <div class="pt-2 border-t flex gap-2">
                     ${user ? `
                         <a href="#/perfil" class="btn btn-ghost btn-sm">Perfil</a>
-                        <button id="logout-btn-mobile" class="btn btn-outline btn-sm">Sair</button>
+                        <button onclick="db.auth.signOut()" class="btn btn-outline btn-sm">Sair</button>
                     ` : `
                         <a href="#/login" class="btn btn-ghost btn-sm">Entrar</a>
                         <a href="#/cadastro" class="btn btn-primary btn-sm">Cadastrar</a>
@@ -109,15 +108,13 @@ function renderNavbar() {
         };
     }
 
-    const logoutBtns = [document.getElementById('logout-btn'), document.getElementById('logout-btn-mobile')];
-    logoutBtns.forEach(btn => {
-        if (btn) {
-            btn.onclick = async () => {
-                await db.auth.signOut();
-                window.location.hash = '#/';
-            };
-        }
-    });
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.onclick = async () => {
+            await db.auth.signOut();
+            window.location.hash = '#/';
+        };
+    }
 }
 
 function renderActivityCard(activity) {
@@ -445,20 +442,18 @@ async function pageMyRegistrations() {
     `;
 }
 
-// --- ADMIN PANEL ---
-
 async function pageAdmin() {
     if (!state.user || !state.isAdmin) {
         window.location.hash = '#/';
         return '';
     }
 
-    const { data: activities } = await db.from('activities').select('*').order('created_at', { ascending: false });
+    const { data: activities } = await db.from('activities').select('*');
     const { data: regCounts } = await db.from('registrations').select('status').neq('status', 'cancelada');
 
     const totalActivities = activities?.length || 0;
     const totalRegistrations = regCounts?.length || 0;
-    const activeRegistrations = regCounts?.filter(r => r.status === 'inscrita' || r.status === 'confirmada' || r.status === 'presente').length || 0;
+    const activeRegistrations = regCounts?.filter(r => r.status === 'inscrita' || r.status === 'confirmada').length || 0;
     
     const totalSlots = activities?.reduce((s, a) => s + a.total_slots, 0) || 0;
     const availableSlots = activities?.reduce((s, a) => s + a.available_slots, 0) || 0;
@@ -466,15 +461,8 @@ async function pageAdmin() {
 
     return `
         <div class="container mx-auto px-4 py-8">
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                <div>
-                    <h1 class="font-heading text-3xl font-bold mb-1">Painel Admin</h1>
-                    <p class="text-muted-foreground">Gestão do projeto Meninas Digitais</p>
-                </div>
-                <button id="btn-new-activity" class="btn btn-primary gap-2">
-                    <i data-lucide="plus" class="h-4 w-4"></i> Nova Atividade
-                </button>
-            </div>
+            <h1 class="font-heading text-3xl font-bold mb-2">Painel Admin</h1>
+            <p class="text-muted-foreground mb-8">Visão geral do projeto Meninas Digitais</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <div class="card p-6">
@@ -495,242 +483,16 @@ async function pageAdmin() {
                 </div>
             </div>
             
-            <div class="card overflow-hidden">
-                <div class="p-6 border-b flex items-center justify-between">
-                    <h3 class="font-heading font-bold text-xl">Gerenciar Atividades</h3>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-left">
-                        <thead class="bg-muted/50 text-muted-foreground font-medium border-b">
-                            <tr>
-                                <th class="px-6 py-3">Atividade</th>
-                                <th class="px-6 py-3">Data</th>
-                                <th class="px-6 py-3">Vagas</th>
-                                <th class="px-6 py-3">Status</th>
-                                <th class="px-6 py-3 text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y">
-                            ${(activities || []).map(act => `
-                                <tr class="hover:bg-muted/20 transition-colors">
-                                    <td class="px-6 py-4">
-                                        <div class="font-semibold text-foreground">${act.title}</div>
-                                        <div class="text-xs text-muted-foreground capitalize">${act.type}</div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div>${formatDate(act.start_date)}</div>
-                                        <div class="text-xs text-muted-foreground">${formatTime(act.start_date)}</div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <div class="flex items-center gap-2">
-                                            <div class="w-12 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                                <div class="bg-primary h-full" style="width: ${Math.min(100, (act.total_slots - act.available_slots) / act.total_slots * 100)}%"></div>
-                                            </div>
-                                            <span>${act.total_slots - act.available_slots}/${act.total_slots}</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span class="badge ${act.status === 'cancelada' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'} border-none capitalize">
-                                            ${act.status || 'ativa'}
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 text-right">
-                                        <div class="flex justify-end gap-2">
-                                            <button onclick="viewRegistrations('${act.id}', '${act.title}')" class="btn btn-outline btn-sm px-2" title="Inscrições">
-                                                <i data-lucide="users" class="h-4 w-4"></i>
-                                            </button>
-                                            <button onclick="editActivity('${act.id}')" class="btn btn-outline btn-sm px-2" title="Editar">
-                                                <i data-lucide="edit-2" class="h-4 w-4"></i>
-                                            </button>
-                                            ${act.status !== 'cancelada' ? `
-                                                <button onclick="cancelActivity('${act.id}')" class="btn btn-outline btn-sm px-2 text-destructive hover:bg-destructive/10" title="Cancelar">
-                                                    <i data-lucide="trash-2" class="h-4 w-4"></i>
-                                                </button>
-                                            ` : ''}
-                                        </div>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Modal para Criar/Editar Atividade -->
-        <div id="modal-activity" class="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
-            <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 relative">
-                <button onclick="closeModal('modal-activity')" class="absolute top-4 right-4 p-2 hover:bg-muted rounded-full">
-                    <i data-lucide="x" class="h-5 w-5"></i>
-                </button>
-                <h2 id="modal-title" class="font-heading text-2xl font-bold mb-6">Nova Atividade</h2>
-                <form id="activity-form" class="space-y-4">
-                    <input type="hidden" id="activity-id">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="md:col-span-2">
-                            <label class="block text-sm font-medium mb-1">Título</label>
-                            <input type="text" id="act-title" class="input-field" required>
-                        </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-sm font-medium mb-1">Descrição</label>
-                            <textarea id="act-description" class="input-field h-24 py-2" required></textarea>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Tipo</label>
-                            <select id="act-type" class="input-field" required>
-                                <option value="oficina">Oficina</option>
-                                <option value="minicurso">Minicurso</option>
-                                <option value="palestra">Palestra</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Local</label>
-                            <input type="text" id="act-location" class="input-field" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Início</label>
-                            <input type="datetime-local" id="act-start" class="input-field" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Fim</label>
-                            <input type="datetime-local" id="act-end" class="input-field" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium mb-1">Total de Vagas</label>
-                            <input type="number" id="act-slots" class="input-field" required min="1">
-                        </div>
-                    </div>
-                    <div class="pt-4 flex justify-end gap-3">
-                        <button type="button" onclick="closeModal('modal-activity')" class="btn btn-outline">Cancelar</button>
-                        <button type="submit" class="btn btn-primary">Salvar Atividade</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Modal para Ver Inscrições -->
-        <div id="modal-registrations" class="fixed inset-0 bg-background/80 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
-            <div class="card w-full max-w-4xl max-h-[90vh] overflow-y-auto p-8 relative">
-                <button onclick="closeModal('modal-registrations')" class="absolute top-4 right-4 p-2 hover:bg-muted rounded-full">
-                    <i data-lucide="x" class="h-5 w-5"></i>
-                </button>
-                <h2 id="reg-modal-title" class="font-heading text-2xl font-bold mb-2">Inscrições</h2>
-                <p id="reg-modal-subtitle" class="text-muted-foreground mb-6"></p>
-                <div id="reg-list-container" class="overflow-x-auto">
-                    <!-- Lista será carregada aqui -->
+            <div class="card p-6">
+                <h3 class="font-heading font-bold text-xl mb-4">Gerenciamento</h3>
+                <p class="text-muted-foreground mb-4">Para gerenciar atividades e inscrições detalhadamente, use o painel administrativo original ou implemente os módulos de CRUD aqui.</p>
+                <div class="flex gap-4">
+                    <button class="btn btn-primary" disabled>Nova Atividade</button>
+                    <button class="btn btn-outline" disabled>Ver Todas Inscrições</button>
                 </div>
             </div>
         </div>
     `;
-}
-
-// --- Funções de Ação Admin ---
-
-function closeModal(id) {
-    document.getElementById(id).classList.add('hidden');
-}
-
-async function editActivity(id) {
-    const { data: act } = await db.from('activities').select('*').eq('id', id).single();
-    if (!act) return;
-
-    document.getElementById('modal-title').innerText = 'Editar Atividade';
-    document.getElementById('activity-id').value = act.id;
-    document.getElementById('act-title').value = act.title;
-    document.getElementById('act-description').value = act.description;
-    document.getElementById('act-type').value = act.type;
-    document.getElementById('act-location').value = act.location;
-    document.getElementById('act-start').value = act.start_date.slice(0, 16);
-    document.getElementById('act-end').value = act.end_date.slice(0, 16);
-    document.getElementById('act-slots').value = act.total_slots;
-
-    document.getElementById('modal-activity').classList.remove('hidden');
-    lucide.createIcons();
-}
-
-async function cancelActivity(id) {
-    if (!confirm('Tem certeza que deseja cancelar esta atividade?')) return;
-    
-    try {
-        const { error } = await db.from('activities').update({ status: 'cancelada' }).eq('id', id);
-        if (error) throw error;
-        alert('Atividade cancelada com sucesso!');
-        router();
-    } catch (err) {
-        alert('Erro ao cancelar: ' + err.message);
-    }
-}
-
-async function viewRegistrations(activityId, title) {
-    const container = document.getElementById('reg-list-container');
-    document.getElementById('reg-modal-title').innerText = `Inscrições: ${title}`;
-    document.getElementById('modal-registrations').classList.remove('hidden');
-    
-    container.innerHTML = '<div class="flex justify-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>';
-
-    try {
-        const { data: regs, error } = await db
-            .from('registrations')
-            .select('*, user:user_id(*)') // Assume que existe uma view ou os metadados estão acessíveis
-            .eq('activity_id', activityId)
-            .neq('status', 'cancelada');
-
-        if (error) throw error;
-
-        if (!regs || regs.length === 0) {
-            container.innerHTML = '<div class="text-center py-10 text-muted-foreground">Nenhuma inscrição encontrada para esta atividade.</div>';
-        } else {
-            container.innerHTML = `
-                <table class="w-full text-sm text-left">
-                    <thead class="bg-muted/50 text-muted-foreground font-medium border-b">
-                        <tr>
-                            <th class="px-6 py-3">Usuária</th>
-                            <th class="px-6 py-3">Status</th>
-                            <th class="px-6 py-3 text-right">Presença</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y">
-                        ${regs.map(reg => `
-                            <tr>
-                                <td class="px-6 py-4">
-                                    <div class="font-medium">${reg.user?.name || 'Usuária'}</div>
-                                    <div class="text-xs text-muted-foreground">${reg.user?.email || ''}</div>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span class="badge ${reg.status === 'presente' ? 'bg-emerald-100 text-emerald-700' : reg.status === 'ausente' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'} capitalize">
-                                        ${reg.status}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    <div class="flex justify-end gap-2">
-                                        <button onclick="updatePresence('${reg.id}', 'presente', '${activityId}', '${title}')" class="btn btn-outline btn-sm ${reg.status === 'presente' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : ''}">
-                                            Presente
-                                        </button>
-                                        <button onclick="updatePresence('${reg.id}', 'ausente', '${activityId}', '${title}')" class="btn btn-outline btn-sm ${reg.status === 'ausente' ? 'bg-red-50 border-red-200 text-red-700' : ''}">
-                                            Ausente
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        }
-    } catch (err) {
-        container.innerHTML = `<div class="text-destructive p-4">Erro ao carregar inscrições: ${err.message}</div>`;
-    }
-    lucide.createIcons();
-}
-
-async function updatePresence(regId, status, activityId, title) {
-    try {
-        const { error } = await db.from('registrations').update({ status }).eq('id', regId);
-        if (error) throw error;
-        viewRegistrations(activityId, title); // Recarregar lista
-    } catch (err) {
-        alert('Erro ao atualizar presença: ' + err.message);
-    }
 }
 
 // --- Roteador ---
@@ -750,11 +512,13 @@ async function router() {
     const hash = window.location.hash.slice(1) || '/';
     const mainContent = document.getElementById('main-content');
     
+    // Loader simples
     mainContent.innerHTML = '<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>';
 
     let pageFn = routes[hash];
     let params = null;
 
+    // Lógica simples de params (ex: /atividades/:id)
     if (!pageFn) {
         for (const route in routes) {
             if (route.includes(':')) {
@@ -793,7 +557,7 @@ async function cancelRegistration(registrationId) {
         
         if (data.success) {
             alert('Inscrição cancelada com sucesso!');
-            router();
+            router(); // Recarregar página
         } else {
             alert(data.message);
         }
@@ -805,33 +569,29 @@ async function cancelRegistration(registrationId) {
 function setupPageListeners(hash) {
     if (hash === '/login') {
         const form = document.getElementById('login-form');
-        if (form) {
-            form.onsubmit = async (e) => {
-                e.preventDefault();
-                const email = document.getElementById('email').value;
-                const password = document.getElementById('password').value;
-                const { error } = await db.auth.signInWithPassword({ email, password });
-                if (error) alert(error.message);
-                else window.location.hash = '#/';
-            };
-        }
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const { error } = await db.auth.signInWithPassword({ email, password });
+            if (error) alert(error.message);
+            else window.location.hash = '#/';
+        };
     } else if (hash === '/cadastro') {
         const form = document.getElementById('register-form');
-        if (form) {
-            form.onsubmit = async (e) => {
-                e.preventDefault();
-                const name = document.getElementById('name').value;
-                const email = document.getElementById('email').value;
-                const password = document.getElementById('password').value;
-                const { error } = await db.auth.signUp({ 
-                    email, 
-                    password,
-                    options: { data: { name, user_type: 'externo' } }
-                });
-                if (error) alert(error.message);
-                else alert('Conta criada! Verifique seu e-mail.');
-            };
-        }
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const { error } = await db.auth.signUp({ 
+                email, 
+                password,
+                options: { data: { name, user_type: 'externo' } }
+            });
+            if (error) alert(error.message);
+            else alert('Conta criada! Verifique seu e-mail.');
+        };
     } else if (hash.startsWith('/atividades/')) {
         const regBtn = document.getElementById('register-activity-btn');
         if (regBtn) {
@@ -862,60 +622,13 @@ function setupPageListeners(hash) {
                 }
             };
         }
-    } else if (hash === '/admin') {
-        const btnNew = document.getElementById('btn-new-activity');
-        if (btnNew) {
-            btnNew.onclick = () => {
-                document.getElementById('modal-title').innerText = 'Nova Atividade';
-                document.getElementById('activity-id').value = '';
-                document.getElementById('activity-form').reset();
-                document.getElementById('modal-activity').classList.remove('hidden');
-                lucide.createIcons();
-            };
-        }
-
-        const activityForm = document.getElementById('activity-form');
-        if (activityForm) {
-            activityForm.onsubmit = async (e) => {
-                e.preventDefault();
-                const id = document.getElementById('activity-id').value;
-                const activityData = {
-                    title: document.getElementById('act-title').value,
-                    description: document.getElementById('act-description').value,
-                    type: document.getElementById('act-type').value,
-                    location: document.getElementById('act-location').value,
-                    start_date: document.getElementById('act-start').value,
-                    end_date: document.getElementById('act-end').value,
-                    total_slots: parseInt(document.getElementById('act-slots').value)
-                };
-
-                try {
-                    let error;
-                    if (id) {
-                        const { error: err } = await db.from('activities').update(activityData).eq('id', id);
-                        error = err;
-                    } else {
-                        // Ao criar, slots disponíveis = total de slots
-                        activityData.available_slots = activityData.total_slots;
-                        const { error: err } = await db.from('activities').insert([activityData]);
-                        error = err;
-                    }
-
-                    if (error) throw error;
-                    alert('Atividade salva com sucesso!');
-                    closeModal('modal-activity');
-                    router();
-                } catch (err) {
-                    alert('Erro ao salvar: ' + err.message);
-                }
-            };
-        }
     }
 }
 
 // Inicialização
 window.addEventListener('hashchange', router);
 window.addEventListener('load', async () => {
+    // Verificar sessão inicial
     const { data: { session } } = await db.auth.getSession();
     if (session) {
         state.user = { id: session.user.id, ...session.user.user_metadata };
@@ -923,17 +636,15 @@ window.addEventListener('load', async () => {
         state.isAdmin = !!role;
     }
 
-    db.auth.onAuthStateChange(async (event, session) => {
+    // Escutar mudanças de auth
+    db.auth.onAuthStateChange((event, session) => {
         if (session) {
             state.user = { id: session.user.id, ...session.user.user_metadata };
-            const { data: role } = await db.from('user_roles').select('role').eq('user_id', session.user.id).eq('role', 'admin').maybeSingle();
-            state.isAdmin = !!role;
         } else {
             state.user = null;
             state.isAdmin = false;
         }
         renderNavbar();
-        router();
     });
 
     router();
